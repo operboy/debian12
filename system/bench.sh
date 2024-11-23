@@ -137,31 +137,37 @@ else
 fi
 
 # 结果总结
-current_datetime=$(date +"%Y%m%d_%H%M")
-result_file="bench_$current_datetime.txt"
+# 创建时间戳
+current_datetime=$(date +"%Y%m%d_%H%M%S")
+result_file="/tmp/bench_${current_datetime}.txt"
 
-cat <<EOF | tee "$result_file"
+# 确保直接将结果写入文件
+{
+    echo "========================================"
+    echo "        服务器性能测试报告"
+    echo "        $(date +"%Y-%m-%d %H:%M:%S")"
+    echo "========================================"
+    echo
+    echo "系统信息:"
+    echo "----------------------------------------"
+    echo "$(get_system_info)"
+    echo
+    echo "性能测试结果:"
+    echo "----------------------------------------"
+    echo "CPU性能: $cpu_speed 事件/秒"
+    echo "内存速度: $memory_speed MiB/秒"
+    echo "磁盘读取速度: $disk_read_result MB/秒"
+    echo "磁盘顺序写入速度: $seq_write_result"
+    echo "磁盘随机写入速度: $rand_write_result"
+    echo "网络下载速度: $download_speed"
+    echo "网络上传速度: $upload_speed"
+    echo "----------------------------------------"
+} > "$result_file"
 
-========================================
-        服务器性能测试报告
-        $(date +"%Y-%m-%d %H:%M:%S")
-========================================
+# 显示结果
+cat "$result_file"
 
-系统信息:
-----------------------------------------
-$(get_system_info)
-
-性能测试结果:
-----------------------------------------
-CPU性能: $cpu_speed 事件/秒
-内存速度: $memory_speed MiB/秒
-磁盘读取速度: $disk_read_result MB/秒
-磁盘顺序写入速度: $seq_write_result
-磁盘随机写入速度: $rand_write_result
-网络下载速度: $download_speed
-网络上传速度: $upload_speed
-----------------------------------------
-EOF
+echo -e "${GREEN}测试报告已保存到: $result_file${NC}"
 
 print_header "性能测试已完成"
-echo -e "${GREEN}测试报告已保存到: $result_file${NC}"
+

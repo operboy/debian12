@@ -45,8 +45,8 @@ sudo systemctl enable cron
 
 # 设置 dns
 cat <<EOF | sudo tee /etc/resolv.conf >/dev/null
-nameserver 8.8.8.8
-nameserver 1.1.1.1
+nameserver 8.8.4.4
+nameserver 208.67.222.222
 EOF
 
 # 模拟 /etc/rc.local 开机脚本
