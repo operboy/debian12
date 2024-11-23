@@ -432,19 +432,35 @@ EOF
 # 设置脚本可执行权限
 sudo chmod +x /usr/bin/flushroute
 
-# 安装 gost
-cd /tmp && wget -c https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz
-gunzip gost-linux-amd64-2.11.5.gz && chmod +x gost-linux-amd64-2.11.5 && mv gost-linux-amd64-2.11.5 /usr/bin/gost
-gost -V
+# 检查并安装 gost
+if ! command -v gost >/dev/null 2>&1; then
+    echo "安装 gost..."
+    cd /tmp && wget -c https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz
+    gunzip gost-linux-amd64-2.11.5.gz && chmod +x gost-linux-amd64-2.11.5 && mv gost-linux-amd64-2.11.5 /usr/bin/gost
+    gost -V
+else
+    echo "gost 已安装，版本："
+    gost -V
+fi
 
-# 安装 tcping
-wget https://github.com/pouriyajamshidi/tcping/releases/latest/download/tcping_amd64.deb -O /tmp/tcping.deb
-sudo apt install -y /tmp/tcping.deb
-rm -f /tmp/tcping.deb
+# 检查并安装 tcping
+if ! command -v tcping >/dev/null 2>&1; then
+    echo "安装 tcping..."
+    wget https://github.com/pouriyajamshidi/tcping/releases/latest/download/tcping_amd64.deb -O /tmp/tcping.deb
+    sudo apt install -y /tmp/tcping.deb
+    rm -f /tmp/tcping.deb
+else
+    echo "tcping 已安装"
+fi
 
-
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
-chsh -s $(which zsh) root
+# 检查并安装 oh-my-zsh
+if [ ! -d "$HOME/.oh-my-zsh" ]; then
+    echo "安装 oh-my-zsh..."
+    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+    chsh -s $(which zsh) root
+else
+    echo "oh-my-zsh 已安装"
+fi
 
 
 KEY_BINDINGS=$(cat <<'EOF'
