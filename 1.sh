@@ -125,6 +125,7 @@ locale
 # 创建Python虚拟环境并安装包
 python3 -m venv /opt/py3
 /opt/py3/bin/pip install --no-cache-dir requests speedtest-cli
+ln -s /opt/py3/bin/speedtest-cli /usr/bin/speedtest-cli
 
 # 创建py3命令快捷方式
 echo '#!/bin/bash\n/opt/py3/bin/python "$@"' >/usr/bin/py3 && chmod +x /usr/bin/py3
