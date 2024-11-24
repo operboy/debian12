@@ -38,6 +38,7 @@ sed -i 's/^IPV6=yes/IPV6=no/' /etc/default/ufw
 # 安装并启用 UFW
 apt update && apt install -y ufw
 echo 'y' | ufw reset
+
 ufw default deny incoming
 ufw default allow outgoing
 
@@ -84,9 +85,6 @@ if [ -n "$LAN_IPS" ]; then
         ufw allow from "$ip" comment "内网IP: $ip"
     done
 fi
-
-# 允许ICMP（Ping）
-ufw allow proto icmp comment "允许ICMP（Ping）"
 
 # 启用日志记录
 ufw logging on
