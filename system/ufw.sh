@@ -76,7 +76,8 @@ echo "更新软件包列表并安装 UFW..."
 apt update && apt install -y ufw
 
 echo "重置 UFW 配置..."
-ufw reset
+#echo 'y' | ufw reset && ufw disable && rm -rf /etc/ufw/*.rules.* /var/lib/ufw/*.rules.* /etc/ufw/user.rules.* && echo "UFW已完全重置且无备份"
+echo 'y' | ufw reset
 
 echo "设置默认策略：拒绝所有传入，允许所有传出..."
 ufw default deny incoming
