@@ -36,7 +36,7 @@ done
 sed -i 's/^IPV6=yes/IPV6=no/' /etc/default/ufw
 
 # 安装并启用 UFW
-apt update && apt install -y ufw iptables iptables-persistent
+apt update && apt install -y ufw
 echo 'y' | ufw reset
 ufw default deny incoming
 ufw default allow outgoing
