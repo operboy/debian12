@@ -45,8 +45,10 @@ sudo systemctl enable cron
 
 # 设置 dns
 cat <<EOF | sudo tee /etc/resolv.conf >/dev/null
-nameserver 8.8.4.4
-nameserver 208.67.222.222
+nameserver 1.1.1.1
+nameserver 8.8.8.8
+nameserver 114.114.114.114
+nameserver 223.5.5.5
 EOF
 
 # 模拟 /etc/rc.local 开机脚本
@@ -512,37 +514,64 @@ sed -i "s/set mouse=a/set mouse-=a/g" /usr/share/vim/vim*/defaults.vim
 cat /usr/share/vim/vim*/defaults.vim | grep mouse-=a
 
 # 快捷命令
-# Docker 执行命令（以交互模式运行 /bin/bash）
+# Docker 容器内执行 bash
 sed -i '/dbash()/d' ~/.zshrc
-echo 'dbash() { docker exec -it "$1" /bin/bash; }' >> ~/.zshrc
-echo "Function 'dbash' added or replaced in ~/.zshrc"
+echo 'dbash() { [ $# -eq 0 ] && echo "用法: dbash 容器名" && return 1; docker exec -it "$1" /bin/bash || docker exec -it "$1" /bin/sh; }' >> ~/.zshrc
 
-# 删除并添加 Docker 执行命令（以交互模式运行 /bin/sh）
+# Docker 容器内执行 sh
 sed -i '/dsh()/d' ~/.zshrc
-echo 'dsh() { docker exec -it "$1" /bin/sh; }' >> ~/.zshrc
-echo "Function 'dsh' added or replaced in ~/.zshrc"
+echo 'dsh() { [ $# -eq 0 ] && echo "用法: dsh 容器名" && return 1; docker exec -it "$1" /bin/sh; }' >> ~/.zshrc
 
-# 删除并添加 Docker 实时日志查看
+# Docker 实时日志查看
 sed -i '/dlogs()/d' ~/.zshrc
-echo 'dlogs() { docker logs -f "$1"; }' >> ~/.zshrc
-echo "Function 'dlogs' added or replaced in ~/.zshrc"
+echo 'dlogs() { [ $# -eq 0 ] && echo "用法: dlogs 容器名 [行数]" && return 1; if [ -z "$2" ]; then docker logs -f "$1"; else docker logs -f --tail "$2" "$1"; fi; }' >> ~/.zshrc
 
-# 删除并添加 Docker 重启容器
+# Docker 重启容器
 sed -i '/drestart()/d' ~/.zshrc
-echo 'drestart() { docker stop "$1" -t 1 && docker start "$1"; }' >> ~/.zshrc
-echo "Function 'drestart' added or replaced in ~/.zshrc"
+echo 'drestart() { [ $# -eq 0 ] && echo "用法: drestart 容器名1 [容器名2 ...]" && return 1; echo "将要重启容器: $*"; read -p "确认重启? [y/N] " r && [[ $r =~ ^[Yy]$ ]] && for c in "$@"; do docker stop "$c" -t 1 && docker start "$c" && echo "已重启 $c"; done; }' >> ~/.zshrc
 
-# 删除并添加 Docker 停止并移除容器
+# Docker 停止并删除容器
 sed -i '/drm()/d' ~/.zshrc
-echo 'drm() { docker stop "$1" -t 1 && docker rm "$1"; }' >> ~/.zshrc
-echo "Function 'drm' added or replaced in ~/.zshrc"
+echo 'drm() { [ $# -eq 0 ] && echo "用法: drm 容器名1 [容器名2 ...]" && return 1; echo "将要删除容器: $*"; read -p "确认删除? [y/N] " r && [[ $r =~ ^[Yy]$ ]] && for c in "$@"; do docker stop "$c" -t 1 && docker rm "$c" && echo "已删除 $c"; done; }' >> ~/.zshrc
 
-# 删除并添加 Docker 获取容器名称和 IP 地址
+# Docker 容器IP查看（增加了状态显示）
 sed -i '/dip()/d' ~/.zshrc
-echo 'dip() { docker ps -q | xargs -n 1 docker inspect --format "{{.Name}} - {{range \$k,\$v := .NetworkSettings.Networks}}{{printf \"%s:%s \" \$k \$v.IPAddress}}{{end}}- DNS: {{range .HostConfig.Dns}}{{.}} {{end}}" | sed "s|/||g"; }' >> ~/.zshrc
-echo "Function 'dip' added or replaced in ~/.zshrc"
+echo 'dip() { docker ps -a --format "{{.Names}} - {{.Status}} - {{.Ports}}" && echo "---网络详情---" && docker ps -q | xargs -n 1 docker inspect --format "{{.Name}} - {{range \$k,\$v := .NetworkSettings.Networks}}{{printf \"%s:%s \" \$k \$v.IPAddress}}{{end}}" | sed "s|/||g"; }' >> ~/.zshrc
 
+# Docker 查看运行容器，支持搜索
+sed -i '/dps()/d' ~/.zshrc
+echo 'dps() { if [ $# -eq 0 ]; then docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}"; else docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}" | grep -i "$1"; fi; }' >> ~/.zshrc
+echo "Function 'dps' added or replaced in ~/.zshrc"
+
+# 新增：查看容器资源使用
+sed -i '/dstats()/d' ~/.zshrc
+echo 'dstats() { docker stats --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}\t{{.BlockIO}}"; }' >> ~/.zshrc
+
+# 新增：查看容器详细信息
+sed -i '/dinfo()/d' ~/.zshrc
+echo 'dinfo() { [ $# -eq 0 ] && echo "用法: dinfo 容器名" && return 1; docker inspect "$1" | grep -A 20 "Config\|State\|NetworkSettings"; }' >> ~/.zshrc
+sed -i '/dim()/d' ~/.zshrc
+echo 'dim() { if [ $# -eq 0 ]; then docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"; else docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}" | grep -i "$1"; fi; }' >> ~/.zshrc
+
+# 一键停止所有容器
+sed -i '/dstop()/d' ~/.zshrc
+echo 'dstop() { echo "将停止所有运行中的容器"; read -p "确认停止? [y/N] " r && [[ $r =~ ^[Yy]$ ]] && docker stop $(docker ps -q) && echo "已停止所有容器"; }' >> ~/.zshrc
+
+# 进入容器执行命令
+sed -i '/dexec()/d' ~/.zshrc
+echo 'dexec() { [ $# -lt 2 ] && echo "用法: dexec 容器名 命令" && return 1; docker exec -it "$1" "${@:2}"; }' >> ~/.zshrc
+
+# 容器端口映射查看
+sed -i '/dport()/d' ~/.zshrc
+echo 'dport() { if [ $# -eq 0 ]; then docker ps --format "{{.Names}} - {{.Ports}}"; else docker ps --format "{{.Names}} - {{.Ports}}" | grep -i "$1"; fi; }' >> ~/.zshrc
+
+# 查看容器内进程
+sed -i '/dtop()/d' ~/.zshrc
+echo 'dtop() { [ $# -eq 0 ] && echo "用法: dtop 容器名" && return 1; docker top "$1"; }' >> ~/.zshrc
+
+echo "所有 Docker 快捷命令已更新完成"
 zsh -c "source ~/.zshrc"
+
 
 # 创建并写入配置
 cat > ~/.vimrc << 'EOF'
