@@ -38,6 +38,7 @@ if [ "$1" = "remove" ]; then
     rm -f $APT_CONF
 
     echo "已移除所有代理设置"
+    source /etc/environment
     echo "请重新登录终端或执行 'source /etc/environment' 使系统代理设置生效"
     exit 0
 fi
@@ -69,5 +70,7 @@ grep -i "proxy" $ENVIRONMENT_FILE
 
 echo -e "\n2. APT代理配置："
 cat $APT_CONF
+
+source /etc/environment
 
 echo -e "\n请重新登录终端或执行 'source /etc/environment' 使系统代理设置生效"
