@@ -5,9 +5,9 @@
 #   2. 支持端口范围(如:20000-30000)
 #   3. 支持IP白名单
 #   4. 支持内网IP设置
-# 
+#
 # 使用方法:
-#   curl -s https://raw.githubusercontent.com/operboy/debian12/refs/heads/main/system/ufw.sh | bash -s -- [选项]
+#   curl -s "https://raw.githubusercontent.com/operboy/debian12/refs/heads/main/system/ufw.sh?$(date +%s)" | bash -s -- [选项]
 #
 # 参数说明:
 #   -p,--ports '端口列表'    示例: '80,443,20000-30000,55000-55599'
@@ -15,7 +15,7 @@
 #   -l,--lan-ips '内网IP'    示例: '10.0.0.0/8,172.16.0.0/12'
 #
 # 使用示例:
-#   curl -s https://raw.githubusercontent.com/operboy/debian12/refs/heads/main/system/ufw.sh | bash -s -- \
+#   curl -s "https://raw.githubusercontent.com/operboy/debian12/refs/heads/main/system/ufw.sh?$(date +%s)" | bash -s -- \
 #   -p '80,443,20000-30000' \
 #   -w '1.2.3.0/24,6.7.8.0/24' \
 #   -l '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'
@@ -44,11 +44,11 @@ if [ ! -z "$PORTS" ]; then
     IFS=',' read -ra PORT_RANGES <<< "$PORTS"
     for range in "${PORT_RANGES[@]}"; do
         if [[ $range =~ ^([0-9]+)-([0-9]+)$ ]]; then
-            ufw allow ${BASH_REMATCH[1]}:${BASH_REMATCH[2]}/tcp
-            ufw allow ${BASH_REMATCH[1]}:${BASH_REMATCH[2]}/udp
+            ufw allow ${BASH_REMATCH[1]}:${BASH_REMATCH[2]}/tcp comment "开放端口范围 ${BASH_REMATCH[1]}-${BASH_REMATCH[2]} TCP"
+            ufw allow ${BASH_REMATCH[1]}:${BASH_REMATCH[2]}/udp comment "开放端口范围 ${BASH_REMATCH[1]}-${BASH_REMATCH[2]} UDP"
         else
-            ufw allow $range/tcp
-            ufw allow $range/udp
+            ufw allow $range/tcp comment "开放端口 $range TCP"
+            ufw allow $range/udp comment "开放端口 $range UDP"
         fi
     done
 fi
@@ -56,14 +56,14 @@ fi
 if [ ! -z "$WHITELIST_IPS" ]; then
     IFS=',' read -ra IP_LIST <<< "$WHITELIST_IPS"
     for ip in "${IP_LIST[@]}"; do
-        ufw allow from "$ip"
+        ufw allow from "$ip" comment "白名单IP: $ip"
     done
 fi
 
 if [ ! -z "$LAN_IPS" ]; then
     IFS=',' read -ra LAN_IP_LIST <<< "$LAN_IPS"
     for ip in "${LAN_IP_LIST[@]}"; do
-        ufw allow from "$ip"
+        ufw allow from "$ip" comment "内网IP: $ip"
     done
 fi
 
