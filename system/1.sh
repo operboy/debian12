@@ -194,11 +194,6 @@ apt-get autoclean
 apt-get clean
 echo "软件包已清理。"
 
-# 清理旧的内核
-echo "清理旧内核..."
-dpkg -l 'linux-*' | sed '/^ii/!d;/'"$(uname -r | sed "s/\(.*\)-\([^0-9]\+\)/\1/")"'/d;s/^[^ ]* [^ ]* \([^ ]*\).*/\1/;/[0-9]/!d' | xargs apt-get -y purge 2>/dev/null || true
-echo "旧内核已清理。"
-
 # 清理 systemd 日志
 echo "清理 systemd 日志..."
 journalctl --vacuum-size=100M  # 限制日志大小为 100MB
@@ -676,24 +671,6 @@ compress
 notifempty
 delaycompress
 EOF
-
-# 对 SSD 使用 NOOP 或 deadline
-# 首先检查当前可用的调度器
-available_schedulers=$(cat /sys/block/sda/queue/scheduler)
-echo "可用的调度器: $available_schedulers"
-
-# 尝试设置为 none (新版本的 noop)
-if echo 'none' > /sys/block/sda/queue/scheduler 2>/dev/null; then
-    echo "成功设置调度器为 none"
-elif echo 'noop' > /sys/block/sda/queue/scheduler 2>/dev/null; then
-    echo "成功设置调度器为 noop"
-else
-    echo "无法设置 I/O 调度器，当前可用的调度器有: $available_schedulers"
-fi
-
-# 验证当前使用的调度器
-current_scheduler=$(cat /sys/block/sda/queue/scheduler)
-echo "当前使用的调度器: $current_scheduler"
 
 echo "======================="
 echo "  基础工具安装完成"
