@@ -1,148 +1,59 @@
 #!/bin/bash
+# 设置环境变量以抑制交互式提示
 export DEBIAN_FRONTEND=noninteractive
-apt update && apt install -y ipcalc curl awk
 
-# 定义全局变量
+# 默认值设置
 DEFAULT_SSH_KEY=""
 DOCKER_SUBNET="10.77.1.0/24"
 DOCKER_IP="10.77.1.1"
 SWAP_SIZE="4G"
-SSH_PORT="22"
+SSH_PORT="22" # 默认 SSH 端口
 REBOOT_AFTER_INSTALL=true
-CN_MODE=false
-DEFAULT_TCP_PORTS="80,443,20000-30000,55000-55599"
-DEFAULT_UDP_PORTS=""
-DEFAULT_WHITELIST_IPS="118.99.2.0/24,138.199.62.0/24,156.146.45.0/24,89.187.163.0/24,149.88.106.0/24,103.216.223.0/24,86.107.104.0/24,138.199.24.0/24,156.146.57.0/24"
-DEFAULT_LOCAL_IPS="10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+CN_MODE=false # 默认不启用国内模式
 
-# 定义颜色
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-PURPLE='\033[0;35m'
-CYAN='\033[0;36m'
-GRAY='\033[0;37m'
-NC='\033[0m'
+# 默认防火墙配置
+DEFAULT_TCP_PORTS="80,443,20000-30000,55000-55599" # TCP 默认端口
+DEFAULT_UDP_PORTS="" # UDP 默认端口（默认不开放）
+DEFAULT_WHITELIST_IPS="118.99.2.0/24,138.199.62.0/24,156.146.45.0/24,89.187.163.0/24,149.88.106.0/24,103.216.223.0/24,86.107.104.0/24,138.199.24.0/24,156.146.57.0/24" # 默认白名单 IP
+DEFAULT_LOCAL_IPS="10.0.0.0/8,172.16.0.0/12,192.168.0.0/16" # 默认内网 IP
 
-# 根据CIDR获取子网掩码
-get_netmask() {
-    local CIDR=$1
-    case "$CIDR" in
-        "32") echo "255.255.255.255" ;;
-        "31") echo "255.255.255.254" ;;
-        "30") echo "255.255.255.252" ;;
-        "29") echo "255.255.255.248" ;;
-        "28") echo "255.255.255.240" ;;
-        "27") echo "255.255.255.224" ;;
-        "26") echo "255.255.255.192" ;;
-        "25") echo "255.255.255.128" ;;
-        "24") echo "255.255.255.0" ;;
-        "23") echo "255.255.254.0" ;;
-        "22") echo "255.255.252.0" ;;
-        "21") echo "255.255.248.0" ;;
-        "20") echo "255.255.240.0" ;;
-        "19") echo "255.255.224.0" ;;
-        "18") echo "255.255.192.0" ;;
-        "17") echo "255.255.128.0" ;;
-        "16") echo "255.255.0.0" ;;
-        "15") echo "255.254.0.0" ;;
-        "14") echo "255.252.0.0" ;;
-        "13") echo "255.248.0.0" ;;
-        "12") echo "255.240.0.0" ;;
-        "11") echo "255.224.0.0" ;;
-        "10") echo "255.192.0.0" ;;
-        "9") echo "255.128.0.0" ;;
-        "8") echo "255.0.0.0" ;;
-        *) echo "255.255.255.0" ;;
-    esac
-}
+# 检查依赖工具
+REQUIRED_TOOLS=("ipcalc" "curl" "gawk")
+for tool in "${REQUIRED_TOOLS[@]}"; do
+    if ! command -v $tool &>/dev/null; then
+        apt update && apt install -y ipcalc gawk curl
+    fi
+done
 
-# 获取网络信息的统一函数
-get_network_info() {
-    local iface=$1
-    local IP_INFO=$(ip addr show $iface | grep 'inet ' | head -n1)
-    local IP_ADDR=$(echo "$IP_INFO" | awk '{print $2}' | cut -d/ -f1)
-    local CIDR=$(echo "$IP_INFO" | awk '{print $2}' | cut -d/ -f2)
-    local GATEWAY=$(ip route show dev $iface | grep default | awk '{print $3}')
-    local NETMASK=$(get_netmask "$CIDR")
-    
-    echo -e "  ${CYAN}网卡:${NC} ${YELLOW}$iface${NC}"
-    echo -e "    ${CYAN}IP地址:${NC} ${GREEN}${IP_ADDR:-未分配}${NC}"
-    echo -e "    ${CYAN}子网掩码:${NC} ${GREEN}${NETMASK:-未分配}${NC}"
-    echo -e "    ${CYAN}网关:${NC} ${GREEN}${GATEWAY:-未配置}${NC}"
-    echo -e "${GRAY}----------------------------------------${NC}"
-
-    # 返回获取到的值供其他函数使用
-    echo "$IP_ADDR:$NETMASK:$GATEWAY"
-}
-
-# 获取所有网络信息
-get_all_network_info() {
-    echo -e "${GREEN}当前系统网络配置信息：${NC}"
-    echo -e "${GRAY}----------------------------------------${NC}"
-
-    for iface in $(ip -o link show | awk -F': ' '{print $2}' | grep -Ev '^(lo|docker|veth|br-|tun|virbr)'); do
-        get_network_info "$iface"
-    done
-
-    echo
-    echo -e "${GREEN}当前 /etc/network/interfaces 文件内容：${NC}"
-    echo -e "${GRAY}----------------------------------------${NC}"
-    echo -e "${YELLOW}$(cat /etc/network/interfaces)${NC}"
-    echo -e "${GRAY}----------------------------------------${NC}"
-    echo
-
-    # 生成网络配置命令
-    echo -e "${BLUE}# Debian 网络配置命令：${NC}"
-    echo -e "${PURPLE}cat > /etc/network/interfaces << 'EOF'${NC}"
-    echo -e "${GREEN}source /etc/network/interfaces.d/*"
-    echo "auto lo"
-    echo -e "iface lo inet loopback${NC}"
-    echo
-
-    for iface in $(ip -o link show | awk -F': ' '{print $2}' | grep -Ev '^(lo|docker|veth|br-|tun|virbr)'); do
-        local NET_INFO=$(get_network_info "$iface")
-        local IP_ADDR=$(echo "$NET_INFO" | cut -d: -f1)
-        local NETMASK=$(echo "$NET_INFO" | cut -d: -f2)
-        local GATEWAY=$(echo "$NET_INFO" | cut -d: -f3)
-
-        if [[ -n "$IP_ADDR" ]]; then
-            echo -e "${GREEN}auto $iface"
-            echo "iface $iface inet static"
-            echo "    address $IP_ADDR"
-            echo "    netmask $NETMASK"
-            [[ -n "$GATEWAY" ]] && echo "    gateway $GATEWAY"
-            echo -e "${NC}"
-        fi
-    done
-
-    echo -e "${PURPLE}EOF${NC}"
-    echo
-    echo -e "${BLUE}# 重启网络服务命令：${NC}"
-    echo -e "${PURPLE}systemctl restart networking${NC}"
-}
-
-# 获取当前网络信息
 get_current_network_info() {
     DEFAULT_IFACE=$(ip route | grep default | awk '{print $5}' | head -n1)
-    [ -z "$DEFAULT_IFACE" ] && { echo -e "${RED}警告: 无法获取默认网卡${NC}"; return 1; }
-    
-    local NET_INFO=$(get_network_info "$DEFAULT_IFACE")
-    CURRENT_IP=$(echo "$NET_INFO" | cut -d: -f1)
-    CURRENT_NETMASK=$(echo "$NET_INFO" | cut -d: -f2)
-    CURRENT_GATEWAY=$(echo "$NET_INFO" | cut -d: -f3)
+    if [ -z "$DEFAULT_IFACE" ]; then
+        echo "警告: 无法获取默认网卡"
+        return 1
+    fi
+    CURRENT_IP=$(ip addr show $DEFAULT_IFACE | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
+    CURRENT_CIDR=$(ip addr show $DEFAULT_IFACE | grep 'inet ' | awk '{print $2}' | cut -d/ -f2)
+    CURRENT_NETMASK=$(ipcalc "$CURRENT_IP/$CURRENT_CIDR" | grep -w "Netmask" | awk '{print $2}')
+    CURRENT_GATEWAY=$(ip route | grep default | awk '{print $3}' | head -n1)
+    echo "当前网络配置:"
+    echo "  网卡: $DEFAULT_IFACE"
+    echo "  IP地址: $CURRENT_IP"
+    echo "  子网掩码: $CURRENT_NETMASK"
+    echo "  网关: $CURRENT_GATEWAY"
 }
 
-# 询问是否使用当前网络配置
+
 ask_use_current_network() {
     if [ -z "$IP" ] || [ -z "$NETMASK" ] || [ -z "$GATEWAY" ]; then
-        echo; echo "未指定完整的网络配置，检测到当前系统网络信息："
+        echo
+        echo "未指定完整的网络配置，检测到当前系统网络信息："
         get_current_network_info
         echo
         read -p "是否使用当前网络配置？(y/n) " USE_CURRENT
         if [[ $USE_CURRENT =~ ^[Yy]$ ]]; then
-            IP=$CURRENT_IP; NETMASK=$CURRENT_NETMASK; GATEWAY=$CURRENT_GATEWAY
+            IP=$CURRENT_IP
+            NETMASK=$CURRENT_NETMASK
+            GATEWAY=$CURRENT_GATEWAY
             echo "将使用当前网络配置继续安装"
         else
             echo "请使用以下参数指定网络配置："
@@ -154,7 +65,6 @@ ask_use_current_network() {
     fi
 }
 
-# 显示使用帮助
 usage() {
     echo "Usage: $0 [options]"
     echo "Options:"
@@ -170,8 +80,8 @@ usage() {
     echo "  -local <ips>           设置内网 IP (默认: ${DEFAULT_LOCAL_IPS})"
     echo "  -docker-gateway <ip>   设置Docker IP (默认: ${DOCKER_IP})"
     echo "  -docker-subnet <subnet> 设置Docker子网 (默认: ${DOCKER_SUBNET})"
-    echo "  -swap <size>           设置Swap大小 (默认: ${SWAP_SIZE})"
-    echo "  -cn                    启用国内模式"
+    echo "  -swap <size>           设置Swap大小 (默认: ${SWAP_SIZE}, 例如: 2G, 4G)"
+    echo "  -cn                    启用国内模式，1.sh 后加参数 -s 1"
     echo "  -no-reboot             安装后不重启"
     echo "  -h, --help             显示帮助信息"
     exit 1
@@ -179,41 +89,43 @@ usage() {
 
 # 参数解析
 while [[ $# -gt 0 ]]; do
-    case $1 in
-        -password) PASSWORD="$2"; shift 2;;
-        -ip) IP="$2"; shift 2;;
-        -netmask) NETMASK="$2"; shift 2;;
-        -gateway) GATEWAY="$2"; shift 2;;
-        -ssh-key) SSH_KEY="$2"; shift 2;;
-        -ssh-port) SSH_PORT="$2"; shift 2;;
-        -tcp) TCP_PORTS="$2"; shift 2;;
-        -udp) UDP_PORTS="$2"; shift 2;;
-        -whitelist) WHITELIST_IPS="$2"; shift 2;;
-        -local) LOCAL_IPS="$2"; shift 2;;
-        -docker-gateway) DOCKER_IP="$2"; shift 2;;
-        -docker-subnet) DOCKER_SUBNET="$2"; shift 2;;
-        -swap) SWAP_SIZE="$2"; shift 2;;
-        -cn) CN_MODE=true; shift;;
-        -no-reboot) REBOOT_AFTER_INSTALL=false; shift;;
-        -h|--help) usage;;
-        *) echo "未知参数: $1"; usage;;
+    key="$1"
+    case $key in
+        -password) PASSWORD="$2"; shift 2 ;;
+        -ip) IP="$2"; shift 2 ;;
+        -netmask) NETMASK="$2"; shift 2 ;;
+        -gateway) GATEWAY="$2"; shift 2 ;;
+        -ssh-key) SSH_KEY="$2"; shift 2 ;;
+        -ssh-port) SSH_PORT="$2"; shift 2 ;;
+        -tcp) TCP_PORTS="$2"; shift 2 ;;
+        -udp) UDP_PORTS="$2"; shift 2 ;;
+        -whitelist) WHITELIST_IPS="$2"; shift 2 ;;
+        -local) LOCAL_IPS="$2"; shift 2 ;;
+        -docker-gateway) DOCKER_IP="$2"; shift 2 ;;
+        -docker-subnet) DOCKER_SUBNET="$2"; shift 2 ;;
+        -swap) SWAP_SIZE="$2"; shift 2 ;;
+        -cn) CN_MODE=true; shift ;;
+        -no-reboot) REBOOT_AFTER_INSTALL=false; shift ;;
+        -h|--help) usage ;;
+        *) echo "未知参数: $1"; usage ;;
     esac
 done
 
-# 检查必要参数
-[ -z "$PASSWORD" ] && { echo "错误: 必须指定密码 (-password)"; usage; }
+if [ -z "$PASSWORD" ]; then
+    echo "错误: 必须指定密码 (-password)"
+    usage
+fi
 
-# 设置默认值
+# 设置默认值（如果未提供参数）
 TCP_PORTS=${TCP_PORTS:-$DEFAULT_TCP_PORTS}
 UDP_PORTS=${UDP_PORTS:-$DEFAULT_UDP_PORTS}
 WHITELIST_IPS=${WHITELIST_IPS:-$DEFAULT_WHITELIST_IPS}
 LOCAL_IPS=${LOCAL_IPS:-$DEFAULT_LOCAL_IPS}
 
-# 检查网络配置
 ask_use_current_network
 SSH_KEY=${SSH_KEY:-$DEFAULT_SSH_KEY}
 
-# 生成SSH密钥（如果未提供）
+# 动态生成 SSH 公钥（如果未提供）
 if [ -z "$SSH_KEY" ]; then
     echo "未指定 SSH 公钥，正在生成临时密钥..."
     ssh-keygen -t rsa -b 2048 -f /tmp/temp_ssh_key -N "" -q
@@ -221,8 +133,12 @@ if [ -z "$SSH_KEY" ]; then
     echo "生成的临时 SSH 公钥: $SSH_KEY"
 fi
 
-# 定义脚本URL
+# 设置下载链接和参数
 BASE_URL="https://raw.githubusercontent.com"
+if $CN_MODE; then
+    BASE_URL="https://raw.githubusercontent.com"
+fi
+
 SYSTEM_Init_SCRIPT="${BASE_URL}/operboy/debian12/refs/heads/main/system/2.sh?$(date +%s)"
 SYSTEM_SSH_SCRIPT="${BASE_URL}/operboy/debian12/refs/heads/main/system/ssh.sh?$(date +%s)"
 SYSTEM_SYSCTL_SCRIPT="${BASE_URL}/operboy/debian12/refs/heads/main/system/sysctl.sh?$(date +%s)"
@@ -230,14 +146,25 @@ SYSTEM_DOCKER_SCRIPT="${BASE_URL}/operboy/debian12/refs/heads/main/system/docker
 SYSTEM_UFW_SCRIPT="${BASE_URL}/operboy/debian12/refs/heads/main/system/ufw.sh?$(date +%s)"
 DEBI_SCRIPT_URL="${BASE_URL}/bohanyang/debi/master/debi.sh"
 
-# 构建系统初始化命令
-SYSTEM_1_COMMAND="curl \"$SYSTEM_Init_SCRIPT\" | bash${CN_MODE:+ -s '-cn'}"
+# 根据 CN_MODE 动态设置 1.sh 的执行参数
+if $CN_MODE; then
+    SYSTEM_1_COMMAND="curl \"$SYSTEM_Init_SCRIPT\" | bash -s '-cn' "
+else
+    SYSTEM_1_COMMAND="curl \"$SYSTEM_Init_SCRIPT\" | bash"
+fi
 
 # 生成随机主机名
-RANDOM_HOSTNAME="host-$(head /dev/urandom | tr -dc a-z0-9 | head -c 6)"
+generate_random_hostname() {
+    PREFIX="host"
+    RANDOM_SUFFIX=$(head /dev/urandom | tr -dc a-z0-9 | head -c 6)
+    echo "${PREFIX}-${RANDOM_SUFFIX}"
+}
+
+# 使用生成的随机主机名
+RANDOM_HOSTNAME=$(generate_random_hostname)
 echo "生成的随机主机名: ${RANDOM_HOSTNAME}"
 
-# 创建cloud-init配置
+# 创建必要的 Cloud-Init 文件
 mkdir -p /root/cidata
 touch /root/cidata/meta-data
 cat > /root/cidata/user-data <<EOF
@@ -255,6 +182,7 @@ write_files:
   - content: |
       [Swap]
       What=/swapfile
+
       [Install]
       WantedBy=swap.target
     path: /etc/systemd/system/swapfile.swap
@@ -268,21 +196,96 @@ runcmd:
   - [ sh, -c, 'curl "${SYSTEM_UFW_SCRIPT}" | bash -s -- -p "${SSH_PORT},${TCP_PORTS}" -u "${UDP_PORTS}" -w "${WHITELIST_IPS}" -l "${LOCAL_IPS}"' ]
 EOF
 
-# 下载并执行debi.sh
-curl -fLO ${DEBI_SCRIPT_URL} || { echo "错误: 无法下载 debi.sh"; exit 1; }
+# 下载并执行 debi.sh
+echo "开始下载 debi.sh..."
+if ! curl -fLO ${DEBI_SCRIPT_URL}; then
+    echo "错误: 无法下载 debi.sh，请检查网络连接"
+    exit 1
+fi
 chmod a+rx debi.sh
 
-# 构建debi.sh命令
+# 构建 debi.sh 命令
 DEBI_CMD="./debi.sh --cdn --network-console --ethx --bbr --dns '1.1.1.1 8.8.8.8' --cidata /root/cidata --user root --password '${PASSWORD}'"
-[ ! -z "$IP" ] && DEBI_CMD="$DEBI_CMD --ip '${IP}'"
-[ ! -z "$NETMASK" ] && DEBI_CMD="$DEBI_CMD --netmask '${NETMASK}'"
-[ ! -z "$GATEWAY" ] && DEBI_CMD="$DEBI_CMD --gateway '${GATEWAY}'"
-$CN_MODE && DEBI_CMD="$DEBI_CMD --ustc"
+if [ ! -z "$IP" ]; then
+    DEBI_CMD="$DEBI_CMD --ip '${IP}'"
+fi
+if [ ! -z "$NETMASK" ]; then
+    DEBI_CMD="$DEBI_CMD --netmask '${NETMASK}'"
+fi
+if [ ! -z "$GATEWAY" ]; then
+    DEBI_CMD="$DEBI_CMD --gateway '${GATEWAY}'"
+fi
+if $CN_MODE; then
+    DEBI_CMD="$DEBI_CMD --ustc"
+fi
 
-echo "执行命令：${DEBI_CMD}"
-eval $DEBI_CMD || { echo "错误: debi.sh 执行失败"; exit 1; }
+echo "执行命令："
+echo "$DEBI_CMD"
+if ! eval $DEBI_CMD; then
+    echo "错误: debi.sh 执行失败"
+    exit 1
+fi
 
-# 完成安装
+get_all_network_info() {
+    echo "当前系统网络配置信息："
+    echo "----------------------------------------"
+
+    # 遍历所有有效网卡
+    for iface in $(ip -o link show | awk -F': ' '{print $2}' | grep -Ev '^(lo|docker|veth|br-|tun|virbr)'); do
+        IP_INFO=$(ip addr show $iface | grep 'inet ' | head -n1)
+        IP_ADDR=$(echo "$IP_INFO" | awk '{print $2}' | cut -d/ -f1)
+        CIDR=$(echo "$IP_INFO" | awk '{print $2}' | cut -d/ -f2)
+        GATEWAY=$(ip route show dev $iface | grep default | awk '{print $3}')
+        NETMASK=$(ipcalc "$IP_ADDR/$CIDR" | grep -w "Netmask" | awk '{print $2}')
+
+        echo "网卡: $iface"
+        echo "  IP地址: ${IP_ADDR:-未分配}"
+        echo "  子网掩码: ${NETMASK:-未分配}"
+        echo "  网关: ${GATEWAY:-未配置}"
+        echo "----------------------------------------"
+    done
+
+    echo
+    echo "当前 /etc/network/interfaces 文件内容："
+    echo "----------------------------------------"
+    cat /etc/network/interfaces
+    echo "----------------------------------------"
+    echo
+
+    echo "# Debian 网络配置命令（复制以下全部内容）："
+    echo "cat > /etc/network/interfaces << 'EOF'"
+    echo "source /etc/network/interfaces.d/*"
+    echo "auto lo"
+    echo "iface lo inet loopback"
+    echo
+
+    for iface in $(ip -o link show | awk -F': ' '{print $2}' | grep -Ev '^(lo|docker|veth|br-|tun|virbr)'); do
+        IP_INFO=$(ip addr show $iface | grep 'inet ' | head -n1)
+        IP_ADDR=$(echo "$IP_INFO" | awk '{print $2}' | cut -d/ -f1)
+        GATEWAY=$(ip route show dev $iface | grep default | awk '{print $3}')
+        NETMASK=$(ipcalc "$IP_ADDR/$CIDR" | grep -w "Netmask" | awk '{print $2}')
+
+        if [[ -n "$IP_ADDR" ]]; then
+            echo "auto $iface"
+            echo "iface $iface inet static"
+            echo "    address $IP_ADDR"
+            echo "    netmask $NETMASK"
+            [[ -n "$GATEWAY" ]] && echo "    gateway $GATEWAY"
+            echo
+        fi
+    done
+
+    echo "EOF"
+    echo
+    echo "# 重启网络服务命令："
+    echo "systemctl restart networking"
+}
+
+
+get_all_network_info
+
+
+# 重启逻辑
 if $REBOOT_AFTER_INSTALL; then
     echo "安装完成，系统将在 5 秒后重启..."
     sleep 5
