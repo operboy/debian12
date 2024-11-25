@@ -352,8 +352,10 @@ get_all_network_info
 # 重启逻辑
 if $REBOOT_AFTER_INSTALL; then
     echo "安装完成，系统将在 5 秒后重启..."
+    date
     sleep 5
     reboot
 else
     echo "安装完成，请手动重启系统"
+    date
 fi
