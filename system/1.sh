@@ -12,9 +12,9 @@ REBOOT_AFTER_INSTALL=true
 CN_MODE=false # 默认不启用国内模式
 
 # 默认防火墙配置
-DEFAULT_TCP_PORTS="80,443,20000-30000,55000-55599" # TCP 默认端口
+DEFAULT_TCP_PORTS="80,443,20000-30000" # TCP 默认端口
 DEFAULT_UDP_PORTS="" # UDP 默认端口（默认不开放）
-DEFAULT_WHITELIST_IPS="118.99.2.0/24,138.199.62.0/24,156.146.45.0/24,89.187.163.0/24,149.88.106.0/24,103.216.223.0/24,86.107.104.0/24,138.199.24.0/24,156.146.57.0/24" # 默认白名单 IP
+DEFAULT_WHITELIST_IPS="" # 默认白名单 IP
 DEFAULT_LOCAL_IPS="10.0.0.0/8,172.16.0.0/12,192.168.0.0/16" # 默认内网 IP
 
 # 检查依赖工具
@@ -186,15 +186,38 @@ write_files:
       [Install]
       WantedBy=swap.target
     path: /etc/systemd/system/swapfile.swap
+    permissions: '0644'
+
+  # 创建一个空的日志目录
+  - path: /var/log/cloud-init-scripts/
+    content: ""
+    permissions: '0755'
+    owner: root:root
+    type: directory
 
 runcmd:
-  - [ sh, -c, "[ ! -e /swapfile ] && { fallocate -l ${SWAP_SIZE} /swapfile && chmod 0600 /swapfile && mkswap /swapfile; } || { echo '创建 Swap 文件失败'; exit 1; }; systemctl daemon-reload && systemctl enable --now swapfile.swap" ]
-  - [ sh, -c, 'which curl unzip >/dev/null 2>&1 || (apt update && apt install curl unzip -y) && ${SYSTEM_1_COMMAND}' ]
-  - [ sh, -c, 'curl "${SYSTEM_SSH_SCRIPT}" | bash -s "${SSH_PORT}"' ]
-  - [ sh, -c, 'curl "${SYSTEM_SYSCTL_SCRIPT}" | bash' ]
-  - [ sh, -c, 'curl "${SYSTEM_DOCKER_SCRIPT}" | bash -s "${DOCKER_IP}" "${DOCKER_SUBNET}"' ]
-  - [ sh, -c, 'curl "${SYSTEM_UFW_SCRIPT}" | bash -s -- -p "${SSH_PORT},${TCP_PORTS}" -u "${UDP_PORTS}" -w "${WHITELIST_IPS}" -l "${LOCAL_IPS}"' ]
+  # Swap 配置
+  - [ sh, -c, 'echo "[$(date)] 开始配置 Swap..." >> /var/log/cloud-init-scripts/swap.log && { [ ! -e /swapfile ] && { fallocate -l ${SWAP_SIZE} /swapfile && chmod 0600 /swapfile && mkswap /swapfile; } || { echo "创建 Swap 文件失败"; exit 1; }; systemctl daemon-reload && systemctl enable --now swapfile.swap; } >> /var/log/cloud-init-scripts/swap.log 2>&1 && echo "[$(date)] Swap 配置完成" >> /var/log/cloud-init-scripts/swap.log' ]
+
+  # 系统初始化脚本
+  - [ sh, -c, 'echo "[$(date)] 开始执行系统初始化脚本..." >> /var/log/cloud-init-scripts/system-init.log && { which curl unzip >/dev/null 2>&1 || (apt update && apt install curl unzip -y) && ${SYSTEM_1_COMMAND}; } >> /var/log/cloud-init-scripts/system-init.log 2>&1 && echo "[$(date)] 系统初始化脚本执行完成" >> /var/log/cloud-init-scripts/system-init.log' ]
+
+  # SSH 配置
+  - [ sh, -c, 'echo "[$(date)] 开始配置 SSH..." >> /var/log/cloud-init-scripts/ssh.log && { curl "${SYSTEM_SSH_SCRIPT}" | bash -s "${SSH_PORT}"; } >> /var/log/cloud-init-scripts/ssh.log 2>&1 && echo "[$(date)] SSH 配置完成" >> /var/log/cloud-init-scripts/ssh.log' ]
+
+  # Sysctl 配置
+  - [ sh, -c, 'echo "[$(date)] 开始配置 Sysctl..." >> /var/log/cloud-init-scripts/sysctl.log && { curl "${SYSTEM_SYSCTL_SCRIPT}" | bash; } >> /var/log/cloud-init-scripts/sysctl.log 2>&1 && echo "[$(date)] Sysctl 配置完成" >> /var/log/cloud-init-scripts/sysctl.log' ]
+
+  # Docker 配置
+  - [ sh, -c, 'echo "[$(date)] 开始配置 Docker..." >> /var/log/cloud-init-scripts/docker.log && { curl "${SYSTEM_DOCKER_SCRIPT}" | bash -s "${DOCKER_IP}" "${DOCKER_SUBNET}"; } >> /var/log/cloud-init-scripts/docker.log 2>&1 && echo "[$(date)] Docker 配置完成" >> /var/log/cloud-init-scripts/docker.log' ]
+
+  # UFW 配置
+  - [ sh, -c, 'echo "[$(date)] 开始配置 UFW..." >> /var/log/cloud-init-scripts/ufw.log && { curl "${SYSTEM_UFW_SCRIPT}" | bash -s -- -p "${SSH_PORT},${TCP_PORTS}" -u "${UDP_PORTS}" -w "${WHITELIST_IPS}" -l "${LOCAL_IPS}"; } >> /var/log/cloud-init-scripts/ufw.log 2>&1 && echo "[$(date)] UFW 配置完成" >> /var/log/cloud-init-scripts/ufw.log' ]
+
+  # 添加汇总日志检查命令
+  - [ sh, -c, 'echo "[$(date)] Cloud-init 脚本执行完成，日志汇总：" > /var/log/cloud-init-scripts/summary.log && for f in /var/log/cloud-init-scripts/*.log; do echo "=== \${f} ===" >> /var/log/cloud-init-scripts/summary.log && cat "\${f}" >> /var/log/cloud-init-scripts/summary.log && echo >> /var/log/cloud-init-scripts/summary.log; done' ]
 EOF
+
 
 # 下载并执行 debi.sh
 echo "开始下载 debi.sh..."
@@ -205,7 +228,7 @@ fi
 chmod a+rx debi.sh
 
 # 构建 debi.sh 命令
-DEBI_CMD="./debi.sh --cdn --network-console --ethx --bbr --dns '1.1.1.1 8.8.8.8' --cidata /root/cidata --user root --password '${PASSWORD}'"
+DEBI_CMD="./debi.sh --grub-timeout 1 --cdn --network-console --ethx --bbr --dns '1.1.1.1 8.8.8.8' --cidata /root/cidata --user root --password '${PASSWORD}'"
 if [ ! -z "$IP" ]; then
     DEBI_CMD="$DEBI_CMD --ip '${IP}'"
 fi
