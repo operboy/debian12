@@ -222,6 +222,8 @@ if $CN_MODE; then
     DEBI_CMD="$DEBI_CMD --ustc"
 fi
 
+echo "执行命令："
+echo "$DEBI_CMD"
 if ! eval $DEBI_CMD; then
     echo "错误: debi.sh 执行失败"
     exit 1
