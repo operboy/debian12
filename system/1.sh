@@ -1,4 +1,8 @@
 #!/bin/bash
+# 设置环境变量以抑制交互式提示
+export DEBIAN_FRONTEND=noninteractive
+
+apt update && apt install -y ipcalc
 
 # 默认值设置
 DEFAULT_SSH_KEY=""
