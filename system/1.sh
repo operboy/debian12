@@ -188,31 +188,72 @@ write_files:
     path: /etc/systemd/system/swapfile.swap
     permissions: '0644'
 
-  # 创建一个空的日志目录
   - path: /var/log/cloud-init-scripts/
     content: ""
     permissions: '0755'
     owner: root:root
     type: directory
 
+  # 添加网络检查脚本
+  - path: /usr/local/bin/wait-for-network
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      max_attempts=30
+      attempt=1
+      while [ \$attempt -le \$max_attempts ]; do
+        if ping -c 1 8.8.8.8 >/dev/null 2>&1 || ping -c 1 223.5.5.5 >/dev/null 2>&1; then
+          echo "Network is up"
+          exit 0
+        fi
+        echo "Waiting for network (attempt \$attempt/\$max_attempts)..."
+        sleep 2
+        attempt=\$((attempt + 1))
+      done
+      echo "Network check failed after \$max_attempts attempts"
+      exit 1
+
+  # 添加 APT 源切换脚本
+  - path: /usr/local/bin/switch-apt-source
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      # 备份原始源文件
+      cp /etc/apt/sources.list /etc/apt/sources.list.bak
+      # 使用阿里云源
+      cat > /etc/apt/sources.list << EEOF
+      deb https://mirrors.aliyun.com/debian/ bookworm main contrib non-free non-free-firmware
+      deb https://mirrors.aliyun.com/debian/ bookworm-updates main contrib non-free non-free-firmware
+      deb https://mirrors.aliyun.com/debian/ bookworm-backports main contrib non-free non-free-firmware
+      deb https://mirrors.aliyun.com/debian-security bookworm-security main contrib non-free non-free-firmware
+      EEOF
+      # 更新 apt 缓存
+      apt-get update -y
+
 runcmd:
+  # 等待网络就绪
+  - [ sh, -c, 'echo "[$(date)] 等待网络就绪..." >> /var/log/cloud-init-scripts/network.log && /usr/local/bin/wait-for-network >> /var/log/cloud-init-scripts/network.log 2>&1' ]
+
+  # 如果是国内模式，切换 APT 源
+  - [ sh, -c, 'if [ "${CN_MODE}" = "true" ]; then echo "[$(date)] 切换至国内 APT 源..." >> /var/log/cloud-init-scripts/apt.log && /usr/local/bin/switch-apt-source >> /var/log/cloud-init-scripts/apt.log 2>&1; fi' ]
+
   # Swap 配置
   - [ sh, -c, 'echo "[$(date)] 开始配置 Swap..." >> /var/log/cloud-init-scripts/swap.log && { [ ! -e /swapfile ] && { fallocate -l ${SWAP_SIZE} /swapfile && chmod 0600 /swapfile && mkswap /swapfile; } || { echo "创建 Swap 文件失败"; exit 1; }; systemctl daemon-reload && systemctl enable --now swapfile.swap; } >> /var/log/cloud-init-scripts/swap.log 2>&1 && echo "[$(date)] Swap 配置完成" >> /var/log/cloud-init-scripts/swap.log' ]
 
-  # 系统初始化脚本
-  - [ sh, -c, 'echo "[$(date)] 开始执行系统初始化脚本..." >> /var/log/cloud-init-scripts/system-init.log && { which curl unzip >/dev/null 2>&1 || (apt update && apt install curl unzip -y) && ${SYSTEM_1_COMMAND}; } >> /var/log/cloud-init-scripts/system-init.log 2>&1 && echo "[$(date)] 系统初始化脚本执行完成" >> /var/log/cloud-init-scripts/system-init.log' ]
+  # 系统初始化脚本（添加重试机制）
+  - [ sh, -c, 'echo "[$(date)] 开始执行系统初始化脚本..." >> /var/log/cloud-init-scripts/system-init.log && for i in $(seq 1 3); do echo "尝试第 \$i 次执行初始化脚本..." >> /var/log/cloud-init-scripts/system-init.log && { which curl unzip >/dev/null 2>&1 || (apt-get update && apt-get install -y curl unzip); } && ${SYSTEM_1_COMMAND} && break || { echo "第 \$i 次尝试失败，等待 10 秒后重试..." >> /var/log/cloud-init-scripts/system-init.log; sleep 10; }; done' ]
 
   # SSH 配置
-  - [ sh, -c, 'echo "[$(date)] 开始配置 SSH..." >> /var/log/cloud-init-scripts/ssh.log && { curl "${SYSTEM_SSH_SCRIPT}" | bash -s "${SSH_PORT}"; } >> /var/log/cloud-init-scripts/ssh.log 2>&1 && echo "[$(date)] SSH 配置完成" >> /var/log/cloud-init-scripts/ssh.log' ]
+  - [ sh, -c, 'echo "[$(date)] 开始配置 SSH..." >> /var/log/cloud-init-scripts/ssh.log && for i in $(seq 1 3); do curl "${SYSTEM_SSH_SCRIPT}" | bash -s "${SSH_PORT}" && break || { echo "第 \$i 次尝试失败，等待 5 秒后重试..." >> /var/log/cloud-init-scripts/ssh.log; sleep 5; }; done' ]
 
   # Sysctl 配置
-  - [ sh, -c, 'echo "[$(date)] 开始配置 Sysctl..." >> /var/log/cloud-init-scripts/sysctl.log && { curl "${SYSTEM_SYSCTL_SCRIPT}" | bash; } >> /var/log/cloud-init-scripts/sysctl.log 2>&1 && echo "[$(date)] Sysctl 配置完成" >> /var/log/cloud-init-scripts/sysctl.log' ]
+  - [ sh, -c, 'echo "[$(date)] 开始配置 Sysctl..." >> /var/log/cloud-init-scripts/sysctl.log && for i in $(seq 1 3); do curl "${SYSTEM_SYSCTL_SCRIPT}" | bash && break || { echo "第 \$i 次尝试失败，等待 5 秒后重试..." >> /var/log/cloud-init-scripts/sysctl.log; sleep 5; }; done' ]
 
   # Docker 配置
-  - [ sh, -c, 'echo "[$(date)] 开始配置 Docker..." >> /var/log/cloud-init-scripts/docker.log && { curl "${SYSTEM_DOCKER_SCRIPT}" | bash -s "${DOCKER_IP}" "${DOCKER_SUBNET}"; } >> /var/log/cloud-init-scripts/docker.log 2>&1 && echo "[$(date)] Docker 配置完成" >> /var/log/cloud-init-scripts/docker.log' ]
+  - [ sh, -c, 'echo "[$(date)] 开始配置 Docker..." >> /var/log/cloud-init-scripts/docker.log && for i in $(seq 1 3); do curl "${SYSTEM_DOCKER_SCRIPT}" | bash -s "${DOCKER_IP}" "${DOCKER_SUBNET}" && break || { echo "第 \$i 次尝试失败，等待 5 秒后重试..." >> /var/log/cloud-init-scripts/docker.log; sleep 5; }; done' ]
 
   # UFW 配置
-  - [ sh, -c, 'echo "[$(date)] 开始配置 UFW..." >> /var/log/cloud-init-scripts/ufw.log && { curl "${SYSTEM_UFW_SCRIPT}" | bash -s -- -p "${SSH_PORT},${TCP_PORTS}" -u "${UDP_PORTS}" -w "${WHITELIST_IPS}" -l "${LOCAL_IPS}"; } >> /var/log/cloud-init-scripts/ufw.log 2>&1 && echo "[$(date)] UFW 配置完成" >> /var/log/cloud-init-scripts/ufw.log' ]
+  - [ sh, -c, 'echo "[$(date)] 开始配置 UFW..." >> /var/log/cloud-init-scripts/ufw.log && for i in $(seq 1 3); do curl "${SYSTEM_UFW_SCRIPT}" | bash -s -- -p "${SSH_PORT},${TCP_PORTS}" -u "${UDP_PORTS}" -w "${WHITELIST_IPS}" -l "${LOCAL_IPS}" && break || { echo "第 \$i 次尝试失败，等待 5 秒后重试..." >> /var/log/cloud-init-scripts/ufw.log; sleep 5; }; done' ]
 
   # 添加汇总日志检查命令
   - [ sh, -c, 'echo "[$(date)] Cloud-init 脚本执行完成，日志汇总：" > /var/log/cloud-init-scripts/summary.log && for f in /var/log/cloud-init-scripts/*.log; do echo "=== \${f} ===" >> /var/log/cloud-init-scripts/summary.log && cat "\${f}" >> /var/log/cloud-init-scripts/summary.log && echo >> /var/log/cloud-init-scripts/summary.log; done' ]
