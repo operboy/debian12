@@ -135,7 +135,7 @@ fi
 # 设置下载链接和参数
 BASE_URL="https://raw.githubusercontent.com"
 if $CN_MODE; then
-    BASE_URL="https://raw.kkgithub.com"
+    BASE_URL="https://raw.githubusercontent.com"
 fi
 
 SYSTEM_Init_SCRIPT="${BASE_URL}/operboy/debian12/refs/heads/main/system/2.sh?$(date +%s)"

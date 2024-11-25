@@ -461,7 +461,7 @@ fi
 # 设置下载链接和参数
 BASE_URL="https://raw.githubusercontent.com"
 if $CN_MODE; then
-    BASE_URL="https://raw.kkgithub.com"
+    BASE_URL="https://raw.githubusercontent.com"
 fi
 
 # 检查并安装 oh-my-zsh
