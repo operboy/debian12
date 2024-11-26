@@ -191,10 +191,10 @@ runcmd:
   - [ systemctl, restart, systemd-hostnamed ]
   - [ sh, -c, "[ ! -e /swapfile ] && { fallocate -l $SWAP_SIZE /swapfile && chmod 0600 /swapfile && mkswap /swapfile; }; systemctl daemon-reload && systemctl enable --now swapfile.swap" ]
   - [ sh, -c, "which curl unzip >/dev/null 2>&1 || (apt update && apt install curl unzip -y) && curl '$SYSTEM_INIT_SCRIPT' | bash" ]
+  - [ sh, -c, "curl '$SYSTEM_UFW_SCRIPT' | bash -s -- -p '${TCP_PORTS}' -u '${UDP_PORTS}' -w '${WHITELIST_IPS}' -l '${LOCAL_IPS}'" ]
   - [ sh, -c, "curl '$SYSTEM_SYSCTL_SCRIPT' | bash" ]
   - [ sh, -c, "curl '$SYSTEM_DOCKER_SCRIPT' | bash -s '${DOCKER_IP}' '${DOCKER_SUBNET}'" ]
   - [ sh, -c, "curl '$SYSTEM_SSH_SCRIPT' | bash -s '${SSH_PORT}'" ]
-  - [ sh, -c, "curl '$SYSTEM_UFW_SCRIPT' | bash -s -- -p '${SSH_PORT},${TCP_PORTS}' -u '${UDP_PORTS}' -w '${WHITELIST_IPS}' -l '${LOCAL_IPS}'" ]
   $EXTEND_CMD
 EOF
 
