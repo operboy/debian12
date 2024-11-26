@@ -447,27 +447,10 @@ EOF
 # 设置脚本可执行权限
 sudo chmod +x /usr/bin/flushroute
 
-# 检查并安装 gost
-if ! command -v gost >/dev/null 2>&1; then
-    echo "安装 gost..."
-    cd /tmp && wget -c https://github.com/ginuerzh/gost/releases/download/v2.12.0/gost_2.12.0_linux_amd64.tar.gz
-    rm -fr /tmp/gost && mkdir /tmp/gost && tar -zxvf gost_2.12.0_linux_amd64.tar.gz -C /tmp/gost && chmod +x /tmp/gost/gost && mv /tmp/gost/gost /usr/bin/gost
-    gost -V
-else
-    echo "gost 已安装，版本："
-    gost -V
-fi
-
-# 设置下载链接和参数
-BASE_URL="https://raw.githubusercontent.com"
-if $CN_MODE; then
-    BASE_URL="https://raw.githubusercontent.com"
-fi
-
 # 检查并安装 oh-my-zsh
 if [ ! -d "$HOME/.oh-my-zsh" ]; then
     echo "安装 oh-my-zsh..."
-    sh -c "$(curl -fsSL ${BASE_URL}/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+    sh -c "$(curl -fsSL --retry 5 https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
     chsh -s $(which zsh) root
 else
     echo "oh-my-zsh 已安装"
@@ -540,7 +523,7 @@ echo 'drestart() { [ $# -eq 0 ] && echo "用法: drestart 容器名1 [容器名2
 
 # Docker 停止并删除容器
 sed -i '/drm()/d' ~/.zshrc
-echo 'drm() { [ $# -eq 0 ] && echo "用法: drm 容器名1 [容器名2 ...]" && return 1; echo "将要删除容器: $*"; read -p "确认删除? [y/N] " r && [[ $r =~ ^[Yy]$ ]] && for c in "$@"; do docker stop "$c" -t 1 && docker rm "$c" && echo "已删除 $c"; done; }' >> ~/.zshrc
+echo 'drm() { [ $# -eq 0 ] && echo "用法: drm 容器名1 [容器名2 ...]" && return 1; echo "将要删除容器: $*"; printf "确认删除? [y/N] "; read r; [[ $r =~ ^[Yy]$ ]] && for c in "$@"; do docker stop "$c" -t 1 && docker rm "$c" && echo "已删除 $c"; done; }' >> ~/.zshrc
 
 # Docker 容器IP查看（增加了状态显示）
 sed -i '/dip()/d' ~/.zshrc
@@ -549,7 +532,6 @@ echo 'dip() { docker ps -a --format "{{.Names}} - {{.Status}} - {{.Ports}}" && e
 # Docker 查看运行容器，支持搜索
 sed -i '/dps()/d' ~/.zshrc
 echo 'dps() { if [ $# -eq 0 ]; then docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}"; else docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}" | grep -i "$1"; fi; }' >> ~/.zshrc
-echo "Function 'dps' added or replaced in ~/.zshrc"
 
 # 新增：查看容器资源使用
 sed -i '/dstats()/d' ~/.zshrc

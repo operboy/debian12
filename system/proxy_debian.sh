@@ -74,3 +74,5 @@ cat $APT_CONF
 source /etc/environment
 
 echo -e "\n请重新登录终端或执行 'source /etc/environment' 使系统代理设置生效"
+
+curl ipinfo.io
