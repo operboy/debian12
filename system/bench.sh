@@ -37,7 +37,7 @@ command_exists() {
 # 安装缺失工具的函数
 install_tools() {
     local missing_tools=()
-    for tool in sysbench hdparm fio curl; do
+    for tool in sysbench hdparm fio curl lscpu; do
         if ! command_exists "$tool"; then
             missing_tools+=("$tool")
         fi
@@ -61,10 +61,13 @@ get_system_info() {
     echo "内核版本: $(uname -r)"
     echo "CPU型号: $(grep "model name" /proc/cpuinfo | head -n1 | cut -d':' -f2 | sed 's/^[ \t]*//')"
     echo "CPU核心数: $(nproc)"
+    echo "CPU频率: $(grep "cpu MHz" /proc/cpuinfo | head -n1 | cut -d':' -f2 | sed 's/^[ \t]*//') MHz"
+    echo "CPU缓存大小: $(grep "cache size" /proc/cpuinfo | head -n1 | cut -d':' -f2 | sed 's/^[ \t]*//')"
     echo "物理内存: $(free -h | awk '/^Mem:/ {print $2}')"
     echo "SWAP大小: $(free -h | awk '/^Swap:/ {print $2}')"
     echo "磁盘使用情况:"
     df -h /
+    echo "嵌套虚拟化支持: $(lscpu | grep -i "nested virtualization" | awk -F':' '{print $2}' | sed 's/^[ \t]*//')"
 }
 
 # 如果必要，安装缺失工具
@@ -170,4 +173,3 @@ cat "$result_file"
 echo -e "${GREEN}测试报告已保存到: $result_file${NC}"
 
 print_header "性能测试已完成"
-
